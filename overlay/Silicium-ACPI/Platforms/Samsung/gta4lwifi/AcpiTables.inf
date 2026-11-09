@@ -9,11 +9,11 @@
   Kamorta/FADT.aslc
   Kamorta/GTDT.aslc
   Kamorta/MADT.aslc
+  SSDT.asl
+  Common/SSDT.asl
+  Kamorta/DSDT.asl
 
 [Binaries]
-  ASL|SSDT.aml
-  ASL|Common/SSDT.aml
-  ASL|Kamorta/DSDT.aml
 
 [Packages]
   ArmPkg/ArmPkg.dec
