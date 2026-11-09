@@ -31,7 +31,7 @@ gMemoryDescriptor[] = {
   {"IMEM Base",          0x0C100000, 0x00026000, NoHob,  MMAP_IO, INITIALIZED, Conv,   NS_DEVICE},
   {"IMEM Cookie Base",   0x0C125000, 0x00001000, AddDev, MMAP_IO, INITIALIZED, Conv,   NS_DEVICE},
 
-  // Register Regions (LOW_MEMORY split to avoid bootmgfw allocation collisions)
+  // Register Regions (LOW_MEMORY split to avoid bootmgr memory clashes)
   {"LOW_MEM_P1",         0x00100000, 0x00002000, AddDev, MMAP_IO, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"Win_Boot_Alloc_1",   0x00102000, 0x00001000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},
   {"LOW_MEM_P2",         0x00103000, 0x0FEFD000, AddDev, MMAP_IO, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
@@ -63,7 +63,7 @@ gMemoryDescriptor[] = {
   {"GPU_CC",             0x05990000, 0x00009000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
   {"VIDEO_CC",           0x05B00000, 0x00020000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
   {"MDSS",               0x05E00000, 0x00200000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
-  {"DISP_CC_DISP_CC",    0x05F00000, 0x00020000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
+  {"DISP_CC_DISP_CC",    0x05F00000, 0x00200000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
   {"SMMU",               0x0C600000, 0x00080000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
   {"APSS_WDT_TMR1",      0x0F017000, 0x00001000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
   {"QTIMER",             0x0F020000, 0x00110000, AddDev, MMAP_IO, UNCACHEABLE, MmIO,   NS_DEVICE},
