@@ -9,8 +9,8 @@ gConfigurationDescriptor[] = {
   {"SharedIMEMBaseAddr", 0x0C125000},
   {"DloadCookieAddr", 0x003D3000},
   {"DloadCookieValue", 0x10},
-  {"NumCpus", 1},                      // Force 1 CPU Core
-  {"NumActiveCores", 1},               // Force 1 Active Core
+  {"NumCpus", 4},                      // Force 4 CPU Core
+  {"NumActiveCores", 4},               // Force 4 Active Core
   {"MaxLogFileSize", 0x400000},
   {"UefiMemUseThreshold", 0x77},
   {"USBHS1_Config", 0x0},
@@ -29,9 +29,9 @@ gConfigurationDescriptor[] = {
   {"TzAppsRegnSizeLowRAM", 0xB00000},
   {"EnableLogFsSyncInRetail", 0x0},
   {"ShmBridgememSize", 0xA00000},
-  {"EnableMultiThreading", 0},          // Disable Multi-Threading
-  {"MaxCoreCnt", 1},                    // Force Max 1 Core
-  {"EarlyInitCoreCnt", 1},
+  {"EnableMultiThreading", 1},          // Disable Multi-Threading
+  {"MaxCoreCnt", 4},                    // Force Max 4 Cores
+  {"EarlyInitCoreCnt", 4},
   {"EnableDisplayThread", 1},
   {"EnableUefiSecAppDebugLogDump", 0x1},
   {"AllowNonPersistentVarsInRetail", 0x1},
