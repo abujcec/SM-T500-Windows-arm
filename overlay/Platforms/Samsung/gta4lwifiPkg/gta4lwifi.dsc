@@ -73,6 +73,9 @@
   #
   ConfigurationMapLib|gta4lwifiPkg/Library/ConfigurationMapLib/ConfigurationMapLib.inf
 
+[LibraryClasses]
+  PeCoffLib|MdePkg/Library/BasePeCoffLib/BasePeCoffLib.inf
+
 [Components]
   #
   # ACPI Tables
