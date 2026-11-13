@@ -18,6 +18,7 @@
   UefiLib
   DevicePathLib
   PeCoffLib
+  CacheMaintenanceLib
 
 [Protocols]
   gEfiSimpleFileSystemProtocolGuid
