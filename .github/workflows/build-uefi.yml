@@ -52,7 +52,11 @@ jobs:
           from pathlib import Path
           p = Path("upstream/Mu_Basecore/MdeModulePkg/Core/Dxe/Image/Image.c")
           s = p.read_text()
-          old = "  Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);"
+          old = """  Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
+          if (EFI_ERROR (Status)) {
+            goto Done;
+          }
+          """
           new = """#ifndef MDEPKG_NDEBUG
           if (ImageIsFromFv || (Image->Info.DeviceHandle == NULL)) {
             Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
@@ -61,9 +65,13 @@ jobs:
           }
           #else
           Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
-          #endif"""
+          #endif
+          if (EFI_ERROR (Status)) {
+            goto Done;
+          }
+          """
           if s.count(old) != 1:
-              raise SystemExit(f"expected one ProtectUefiImage call, found {s.count(old)}")
+              raise SystemExit(f"expected one LoadImage protection block, found {s.count(old)}")
           p.write_text(s.replace(old, new))
           PY
 
