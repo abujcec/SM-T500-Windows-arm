@@ -59,7 +59,7 @@ jobs:
               raise SystemExit(f"expected two ProtectUefiImage calls, found {len(hits)}")
           i = hits[1]
           indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
-          lines[i:i+1] = [indent + "Status = EFI_SUCCESS;\\n"]
+          lines[i:i+1] = [indent + "Status = EFI_SUCCESS;\n"]
           p.write_text("".join(lines))
           PY
 
