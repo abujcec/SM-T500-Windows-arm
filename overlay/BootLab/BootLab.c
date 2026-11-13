@@ -18,6 +18,7 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/BaseLib.h>
+#include <Library/CacheMaintenanceLib.h>
 
 #define WINDOWS_BOOT_MANAGER_PATH L"\\EFI\\Microsoft\\Boot\\bootmgfw.efi"
 #define WINDOWS_IMAGE_BOOT_MANAGER_PATH L"\\Windows\\Boot\\EFI\\bootmgfw.efi"
@@ -168,7 +169,7 @@ LoadPeCoffImage (
   }
 
   InvalidateInstructionCacheRange ((VOID *)(UINTN)Context.ImageAddress, (UINTN)Context.ImageSize);
-  EntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)PeCoffLoaderGetEntryPoint (&Context);
+  EntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)Context.EntryPoint;
   Print (L"[PECOFF] Entry=%p base=%p size=0x%lx; transferring control...\n",
          EntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
   Status = EntryPoint (ImageHandle, gST);
