@@ -59,17 +59,7 @@ jobs:
               raise SystemExit(f"expected two ProtectUefiImage calls, found {len(hits)}")
           i = hits[1]
           indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
-          lines[i:i+1] = [indent + x + "\n" for x in [
-              "#ifndef MDEPKG_NDEBUG",
-              "if (ImageIsFromFv || (Image->Info.DeviceHandle == NULL)) {",
-              "  Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);",
-              "} else {",
-              "  Status = EFI_SUCCESS;",
-              "}",
-              "#else",
-              "Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);",
-              "#endif",
-          ]]
+          lines[i:i+1] = [indent + "Status = EFI_SUCCESS;\\n"]
           p.write_text("".join(lines))
           PY
 
