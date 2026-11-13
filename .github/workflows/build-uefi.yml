@@ -51,37 +51,26 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p = Path("upstream/Mu_Basecore/MdeModulePkg/Core/Dxe/Image/Image.c")
-          s = p.read_text()
-          old = """  Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
-          if (EFI_ERROR (Status)) {
-            goto Done;
-          }
-
-          // 
-          // Success.  Return the image handle
-          // 
-          *ImageHandle = Image->Handle;"""
-          new = """#ifndef MDEPKG_NDEBUG
-          if (ImageIsFromFv || (Image->Info.DeviceHandle == NULL)) {
-            Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
-          } else {
-            Status = EFI_SUCCESS;
-          }
-#else
-          Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
-#endif
-          if (EFI_ERROR (Status)) {
-            goto Done;
-          }
-
-          // 
-          // Success.  Return the image handle
-          // 
-          *ImageHandle = Image->Handle;"""
-          s = s.replace("\r\n", "\n")
-          if s.count(old) != 1:
-              raise SystemExit(f"expected one LoadImage protection block, found {s.count(old)}")
-          p.write_text(s.replace(old, new))
+          s = p.read_text().replace("\r\n", "\n")
+          lines = s.splitlines(keepends=True)
+          hits = [i for i, line in enumerate(lines) if "Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);" in line]
+          if len(hits) < 2:
+              raise SystemExit(f"expected two ProtectUefiImage calls, found {len(hits)}")
+          i = hits[1]
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          lines[i:i+1] = [indent + x + "\n" for x in [
+              "#ifndef MDEPKG_NDEBUG",
+              "if (ImageIsFromFv || (Image->Info.DeviceHandle == NULL)) {",
+              "  Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);",
+              "} else {",
+              "  Status = EFI_SUCCESS;",
+              "}",
+              "#else",
+              "Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);",
+              "#endif",
+          ]]
+          p.write_text("".join(lines))
+          PY
 
       - name: Elegir DTB
         if: ${{ inputs.dtb == 'boardid' }}
