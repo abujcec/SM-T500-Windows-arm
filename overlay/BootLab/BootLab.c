@@ -66,6 +66,8 @@ STATIC
 EFI_STATUS
 LoadPeCoffImage (
   IN  EFI_HANDLE  ParentImage,
+  IN  EFI_HANDLE  DeviceHandle,
+  IN  CHAR16      *ImagePath,
   IN  VOID        *SourceBuffer,
   IN  UINTN       SourceSize
   )
@@ -78,6 +80,7 @@ LoadPeCoffImage (
   UINTN                         Pages;
   EFI_LOADED_IMAGE_PROTOCOL     LoadedImage;
   EFI_HANDLE                    ImageHandle;
+  EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
   EFI_IMAGE_ENTRY_POINT         EntryPoint;
 
   ZeroMem (&Context, sizeof (Context));
@@ -134,6 +137,13 @@ LoadPeCoffImage (
   LoadedImage.Revision = EFI_LOADED_IMAGE_PROTOCOL_REVISION;
   LoadedImage.ParentHandle = ParentImage;
   LoadedImage.SystemTable = gST;
+  LoadedImage.DeviceHandle = DeviceHandle;
+  DevicePath = FileDevicePath (DeviceHandle, ImagePath);
+  if (DevicePath == NULL) {
+    gBS->FreePages (Allocation, Pages);
+    return EFI_OUT_OF_RESOURCES;
+  }
+  LoadedImage.FilePath = DevicePath;
   LoadedImage.ImageBase = (VOID *)(UINTN)ImageBase;
   LoadedImage.ImageSize = (UINTN)Context.ImageSize;
   LoadedImage.ImageCodeType = EfiLoaderCode;
@@ -143,6 +153,16 @@ LoadPeCoffImage (
                                           EFI_NATIVE_INTERFACE, &LoadedImage);
   if (EFI_ERROR (Status)) {
     Print (L"[PECOFF] Install LoadedImage protocol failed: %r\n", Status);
+    gBS->FreePool (DevicePath);
+    gBS->FreePages (Allocation, Pages);
+    return Status;
+  }
+  Status = gBS->InstallProtocolInterface (&ImageHandle, &gEfiLoadedImageDevicePathProtocolGuid,
+                                          EFI_NATIVE_INTERFACE, DevicePath);
+  if (EFI_ERROR (Status)) {
+    Print (L"[PECOFF] Install LoadedImageDevicePath failed: %r\n", Status);
+    gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageProtocolGuid, &LoadedImage);
+    gBS->FreePool (DevicePath);
     gBS->FreePages (Allocation, Pages);
     return Status;
   }
@@ -153,7 +173,9 @@ LoadPeCoffImage (
          EntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
   Status = EntryPoint (ImageHandle, gST);
   Print (L"[PECOFF] Windows image returned: %r\n", Status);
+  gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageDevicePathProtocolGuid, DevicePath);
   gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageProtocolGuid, &LoadedImage);
+  gBS->FreePool (DevicePath);
   gBS->FreePages (Allocation, Pages);
   return Status;
 }
@@ -317,7 +339,7 @@ RunLoadProbe (IN EFI_HANDLE ImageHandle, IN EFI_HANDLE FsHandle)
   Print(L"[PROBE B] Read returned: %r (0x%lx), size=0x%lx\n", Status, (UINT64)Status, (UINT64)BufferSize);
   if (!EFI_ERROR(Status)) {
     Print(L"[PROBE B] Calling EDK2 PE/COFF loader...\n");
-    PeStatus = LoadPeCoffImage(ImageHandle, Buffer, BufferSize);
+    PeStatus = LoadPeCoffImage(ImageHandle, FsHandle, WINDOWS_IMAGE_BOOT_MANAGER_PATH, Buffer, BufferSize);
     Print(L"[PROBE B] PE/COFF loader returned: %r (0x%lx)\n", PeStatus, (UINT64)PeStatus);
     gBS->FreePool(Buffer);
   }
