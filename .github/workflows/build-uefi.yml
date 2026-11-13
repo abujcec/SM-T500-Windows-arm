@@ -56,24 +56,32 @@ jobs:
           if (EFI_ERROR (Status)) {
             goto Done;
           }
-          """
+
+          // 
+          // Success.  Return the image handle
+          // 
+          *ImageHandle = Image->Handle;"""
           new = """#ifndef MDEPKG_NDEBUG
           if (ImageIsFromFv || (Image->Info.DeviceHandle == NULL)) {
             Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
           } else {
             Status = EFI_SUCCESS;
           }
-          #else
+#else
           Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
-          #endif
+#endif
           if (EFI_ERROR (Status)) {
             goto Done;
           }
-          """
+
+          // 
+          // Success.  Return the image handle
+          // 
+          *ImageHandle = Image->Handle;"""
+          s = s.replace("\r\n", "\n")
           if s.count(old) != 1:
               raise SystemExit(f"expected one LoadImage protection block, found {s.count(old)}")
           p.write_text(s.replace(old, new))
-          PY
 
       - name: Elegir DTB
         if: ${{ inputs.dtb == 'boardid' }}
