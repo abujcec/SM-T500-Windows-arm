@@ -41,12 +41,13 @@ jobs:
           git checkout "$UPSTREAM_REF"
           # Silicium-ACPI debe estar descargado antes de copiar nuestros ficheros encima.
           git submodule update --init Silicium-ACPI Mu_Basecore
+          git -C Mu_Basecore submodule update --init MdePkg/Library/MipiSysTLib/mipisyst
 
       - name: Aplicar el port gta4lwifi
         run: cp -r kit/overlay/. upstream/
 
       - name: Parche DEBUG de image protection para bootmgfw
-        if: ${{ matrix.release == 'DEBUG' }}
+        if: ${{ matrix.release == 'DEBUG' || matrix.release == 'RELEASE' }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
