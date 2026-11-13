@@ -78,3 +78,6 @@
   # ACPI Tables
   #
   gta4lwifi/AcpiTables.inf
+
+  # BootLab EDK2 PE/COFF loader application
+  BootLab/BootLab.inf
