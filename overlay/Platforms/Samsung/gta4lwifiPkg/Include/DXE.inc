@@ -87,3 +87,6 @@
 
   INF Binaries/gta4l/QcomPkg/Drivers/PILDxe/PILDxe.inf
   INF Binaries/gta4l/QcomPkg/Drivers/ShmBridgeDxe/ShmBridgeDxeLA.inf
+
+  # BootLab manual PE/COFF chainload diagnostic app
+  INF BootLab/BootLab.inf
