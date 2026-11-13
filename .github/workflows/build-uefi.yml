@@ -81,5 +81,6 @@ jobs:
           path: |
             upstream/Mu-gta4lwifi.img
             upstream/Build/gta4lwifiPkg/${{ matrix.release }}_CLANGPDB/FV/SILICIUM_UEFI.fd
+            upstream/Build/gta4lwifiPkg/${{ matrix.release }}_CLANGPDB/AARCH64/BootLab/BootLab/${{ matrix.release }}/T500BootLab.efi
           if-no-files-found: error
 
