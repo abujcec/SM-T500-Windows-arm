@@ -6,6 +6,7 @@ name: Compilar UEFI gta4lwifi (SM-T500)
 # primera prueba) o Mu-gta4lwifi-RELEASE.
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       dtb:
