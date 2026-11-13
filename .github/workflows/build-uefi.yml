@@ -40,7 +40,7 @@ jobs:
           cd upstream
           git checkout "$UPSTREAM_REF"
           # Silicium-ACPI debe estar descargado antes de copiar nuestros ficheros encima.
-          git submodule update --init Silicium-ACPI
+          git submodule update --init Silicium-ACPI Mu_Basecore
 
       - name: Aplicar el port gta4lwifi
         run: cp -r kit/overlay/. upstream/
