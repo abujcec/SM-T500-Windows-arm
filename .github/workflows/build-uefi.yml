@@ -44,6 +44,28 @@ jobs:
       - name: Aplicar el port gta4lwifi
         run: cp -r kit/overlay/. upstream/
 
+      - name: Parche DEBUG de image protection para bootmgfw
+        if: ${{ matrix.release == 'DEBUG' }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("upstream/Mu_Basecore/MdeModulePkg/Core/Dxe/Image/Image.c")
+          s = p.read_text()
+          old = "  Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);"
+          new = """#ifndef MDEPKG_NDEBUG
+          if (ImageIsFromFv || (Image->Info.DeviceHandle == NULL)) {
+            Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
+          } else {
+            Status = EFI_SUCCESS;
+          }
+          #else
+          Status = ProtectUefiImage (&Image->Info, Image->LoadedImageDevicePath);
+          #endif"""
+          if s.count(old) != 1:
+              raise SystemExit(f"expected one ProtectUefiImage call, found {s.count(old)}")
+          p.write_text(s.replace(old, new))
+          PY
+
       - name: Elegir DTB
         if: ${{ inputs.dtb == 'boardid' }}
         run: cp upstream/Resources/DTBs/gta4lwifi-boardid.dtb upstream/Resources/DTBs/gta4lwifi.dtb
@@ -63,3 +85,4 @@ jobs:
             upstream/Mu-gta4lwifi.img
             upstream/Build/gta4lwifiPkg/${{ matrix.release }}_CLANGPDB/FV/SILICIUM_UEFI.fd
           if-no-files-found: error
+
