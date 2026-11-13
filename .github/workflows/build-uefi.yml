@@ -41,7 +41,7 @@ jobs:
           git checkout "$UPSTREAM_REF"
           # Silicium-ACPI debe estar descargado antes de copiar nuestros ficheros encima.
           git submodule update --init Silicium-ACPI Mu_Basecore
-          git -C Mu_Basecore submodule update --init MdePkg/Library/MipiSysTLib/mipisyst
+          git -C Mu_Basecore submodule update --init --recursive
 
       - name: Aplicar el port gta4lwifi
         run: cp -r kit/overlay/. upstream/
