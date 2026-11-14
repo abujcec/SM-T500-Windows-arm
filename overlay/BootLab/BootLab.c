@@ -1,5 +1,5 @@
 /** @file
-  T500 BootLab v0.6: verbose Windows Boot Manager chainload diagnostics.
+  T500 BootLab v0.7: EDK2-context Windows Boot Manager handoff diagnostics.
 
   Scans UEFI Simple File System handles and attempts to load and start the
   existing Windows Boot Manager. This application does not intentionally
@@ -30,6 +30,36 @@ typedef struct {
   UINT8  *Source;
   UINTN  SourceSize;
 } BOOTLAB_IMAGE_SOURCE;
+
+// Mirrors LOADED_IMAGE_PRIVATE_DATA in Mu_Basecore 42d6d889, pinned by
+// build-uefi.yml. DXE Core's StartImage locates this container from the public
+// LoadedImage protocol, so installing only EFI_LOADED_IMAGE_PROTOCOL is not
+// sufficient for a manually mapped PE image.
+typedef struct {
+  UINTN                          Signature;
+  EFI_HANDLE                     Handle;
+  UINTN                          Type;
+  BOOLEAN                        Started;
+  EFI_IMAGE_ENTRY_POINT          EntryPoint;
+  EFI_LOADED_IMAGE_PROTOCOL      Info;
+  EFI_PHYSICAL_ADDRESS           ImageBasePage;
+  UINTN                          NumberOfPages;
+  CHAR8                          *FixupData;
+  EFI_TPL                        Tpl;
+  EFI_STATUS                     Status;
+  UINTN                          ExitDataSize;
+  VOID                           *ExitData;
+  VOID                           *JumpBuffer;
+  BASE_LIBRARY_JUMP_BUFFER       *JumpContext;
+  UINT16                         Machine;
+  VOID                           *PeCoffEmu;
+  VOID                           *RuntimeData;
+  EFI_DEVICE_PATH_PROTOCOL       *LoadedImageDevicePath;
+  PE_COFF_LOADER_IMAGE_CONTEXT   ImageContext;
+  EFI_STATUS                     LoadImageStatus;
+} BOOTLAB_DXE_LOADED_IMAGE_PRIVATE_DATA;
+
+#define BOOTLAB_LOADED_IMAGE_PRIVATE_DATA_SIGNATURE SIGNATURE_32 ('l', 'd', 'r', 'i')
 
 STATIC
 RETURN_STATUS
@@ -79,13 +109,16 @@ LoadPeCoffImage (
   EFI_PHYSICAL_ADDRESS          Allocation;
   EFI_PHYSICAL_ADDRESS          ImageBase;
   UINTN                         Pages;
-  EFI_LOADED_IMAGE_PROTOCOL     LoadedImage;
+  BOOTLAB_DXE_LOADED_IMAGE_PRIVATE_DATA *Image;
   EFI_HANDLE                    ImageHandle;
   EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
   EFI_DEVICE_PATH_PROTOCOL      *HandlePath;
+  EFI_DEVICE_PATH_PROTOCOL      *RelativeFilePath;
   UINTN                          DevicePathPrefixSize;
   UINTN                          FullDevicePathSize;
-  EFI_IMAGE_ENTRY_POINT         EntryPoint;
+  EFI_LOADED_IMAGE_PROTOCOL     *LoadedImageInterface;
+  UINTN                         ExitDataSize;
+  CHAR16                        *ExitData;
 
   ZeroMem (&Context, sizeof (Context));
   Source.Source = (UINT8 *)SourceBuffer;
@@ -105,6 +138,8 @@ LoadPeCoffImage (
            Context.Machine, Context.ImageType, Context.ImageSize);
     return EFI_UNSUPPORTED;
   }
+  Context.ImageCodeMemoryType = EfiLoaderCode;
+  Context.ImageDataMemoryType = EfiLoaderData;
 
   if (Context.SectionAlignment == 0 || Context.ImageSize > MAX_UINTN - Context.SectionAlignment) {
     return EFI_LOAD_ERROR;
@@ -137,11 +172,6 @@ LoadPeCoffImage (
     return Status;
   }
 
-  ZeroMem (&LoadedImage, sizeof (LoadedImage));
-  LoadedImage.Revision = EFI_LOADED_IMAGE_PROTOCOL_REVISION;
-  LoadedImage.ParentHandle = ParentImage;
-  LoadedImage.SystemTable = gST;
-  LoadedImage.DeviceHandle = DeviceHandle;
   HandlePath = DevicePathFromHandle (DeviceHandle);
   DevicePath = FileDevicePath (DeviceHandle, ImagePath);
   if ((DevicePath == NULL) || (HandlePath == NULL)) {
@@ -161,42 +191,94 @@ LoadPeCoffImage (
     gBS->FreePages (Allocation, Pages);
     return EFI_LOAD_ERROR;
   }
-  LoadedImage.FilePath = (EFI_DEVICE_PATH_PROTOCOL *)((UINT8 *)DevicePath + DevicePathPrefixSize);
-  LoadedImage.ImageBase = (VOID *)(UINTN)ImageBase;
-  LoadedImage.ImageSize = (UINTN)Context.ImageSize;
-  LoadedImage.ImageCodeType = EfiLoaderCode;
-  LoadedImage.ImageDataType = EfiLoaderData;
+  RelativeFilePath = (EFI_DEVICE_PATH_PROTOCOL *)((UINT8 *)DevicePath + DevicePathPrefixSize);
+  Image = AllocateZeroPool (sizeof (*Image));
+  if (Image == NULL) {
+    gBS->FreePool (DevicePath);
+    gBS->FreePages (Allocation, Pages);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Image->Signature = BOOTLAB_LOADED_IMAGE_PRIVATE_DATA_SIGNATURE;
+  Image->Type = Context.ImageType;
+  Image->EntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)Context.EntryPoint;
+  Image->Info.Revision = EFI_LOADED_IMAGE_PROTOCOL_REVISION;
+  Image->Info.ParentHandle = ParentImage;
+  Image->Info.SystemTable = gST;
+  Image->Info.DeviceHandle = DeviceHandle;
+  Image->Info.FilePath = DuplicateDevicePath (RelativeFilePath);
+  Image->Info.ImageBase = (VOID *)(UINTN)ImageBase;
+  Image->Info.ImageSize = (UINTN)Context.ImageSize;
+  Image->Info.ImageCodeType = (EFI_MEMORY_TYPE)Context.ImageCodeMemoryType;
+  Image->Info.ImageDataType = (EFI_MEMORY_TYPE)Context.ImageDataMemoryType;
+  Image->ImageBasePage = Allocation;
+  Image->NumberOfPages = Pages;
+  Image->Machine = Context.Machine;
+  Image->LoadedImageDevicePath = DuplicateDevicePath (DevicePath);
+  Image->ImageContext = Context;
+  Image->LoadImageStatus = EFI_SUCCESS;
+  if ((Image->Info.FilePath == NULL) || (Image->LoadedImageDevicePath == NULL)) {
+    Print (L"[PECOFF] Failed to duplicate image paths.\n");
+    if (Image->Info.FilePath != NULL) {
+      gBS->FreePool (Image->Info.FilePath);
+    }
+    if (Image->LoadedImageDevicePath != NULL) {
+      gBS->FreePool (Image->LoadedImageDevicePath);
+    }
+    FreePool (Image);
+    gBS->FreePool (DevicePath);
+    gBS->FreePages (Allocation, Pages);
+    return EFI_OUT_OF_RESOURCES;
+  }
+  gBS->FreePool (DevicePath);
+  DevicePath = NULL;
+
   ImageHandle = NULL;
-  Status = gBS->InstallProtocolInterface (&ImageHandle, &gEfiLoadedImageProtocolGuid,
-                                          EFI_NATIVE_INTERFACE, &LoadedImage);
+  Status = gBS->InstallProtocolInterface (&Image->Handle, &gEfiLoadedImageProtocolGuid,
+                                          EFI_NATIVE_INTERFACE, &Image->Info);
   if (EFI_ERROR (Status)) {
     Print (L"[PECOFF] Install LoadedImage protocol failed: %r\n", Status);
-    gBS->FreePool (DevicePath);
+    gBS->FreePool (Image->Info.FilePath);
+    gBS->FreePool (Image->LoadedImageDevicePath);
+    FreePool (Image);
     gBS->FreePages (Allocation, Pages);
     return Status;
   }
-  Status = gBS->InstallProtocolInterface (&ImageHandle, &gEfiLoadedImageDevicePathProtocolGuid,
-                                          EFI_NATIVE_INTERFACE, DevicePath);
+  ImageHandle = Image->Handle;
+  Status = gBS->InstallProtocolInterface (&Image->Handle, &gEfiLoadedImageDevicePathProtocolGuid,
+                                          EFI_NATIVE_INTERFACE, Image->LoadedImageDevicePath);
   if (EFI_ERROR (Status)) {
     Print (L"[PECOFF] Install LoadedImageDevicePath failed: %r\n", Status);
-    gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageProtocolGuid, &LoadedImage);
-    gBS->FreePool (DevicePath);
+    gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageProtocolGuid, &Image->Info);
+    gBS->FreePool (Image->Info.FilePath);
+    gBS->FreePool (Image->LoadedImageDevicePath);
+    FreePool (Image);
     gBS->FreePages (Allocation, Pages);
     return Status;
   }
 
   InvalidateInstructionCacheRange ((VOID *)(UINTN)Context.ImageAddress, (UINTN)Context.ImageSize);
-  EntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)Context.EntryPoint;
-  Print (L"[PECOFF] Device=%p full-path=%p file-path=%p\n",
-         DeviceHandle, DevicePath, LoadedImage.FilePath);
-  Print (L"[PECOFF] Entry=%p base=%p size=0x%lx; calling Windows Boot Manager entry...\n",
-         EntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
-  Status = EntryPoint (ImageHandle, gST);
-  Print (L"[PECOFF] Windows image returned: %r\n", Status);
-  gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageDevicePathProtocolGuid, DevicePath);
-  gBS->UninstallProtocolInterface (ImageHandle, &gEfiLoadedImageProtocolGuid, &LoadedImage);
-  gBS->FreePool (DevicePath);
-  gBS->FreePages (Allocation, Pages);
+  Print (L"[PECOFF] Device=%p full-path=%p file-path=%p image=%p\n",
+         DeviceHandle, Image->LoadedImageDevicePath, Image->Info.FilePath, ImageHandle);
+  Print (L"[PECOFF] Entry=%p base=%p size=0x%lx; calling DXE StartImage...\n",
+         Image->EntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
+  ExitDataSize = 0;
+  ExitData = NULL;
+  Status = gBS->StartImage (ImageHandle, &ExitDataSize, &ExitData);
+  Print (L"[PECOFF] DXE StartImage returned: %r (0x%lx), exit-size=0x%lx\n",
+         Status, (UINT64)Status, (UINT64)ExitDataSize);
+  if (ExitData != NULL) {
+    gBS->FreePool (ExitData);
+  }
+
+  // CoreStartImage unloads EFI applications that return. If it rejected the
+  // fabricated image before entry, the handle remains and can be unloaded here.
+  LoadedImageInterface = NULL;
+  if (!EFI_ERROR (gBS->HandleProtocol (ImageHandle, &gEfiLoadedImageProtocolGuid,
+                                       (VOID **)&LoadedImageInterface))) {
+    Print (L"[PECOFF] Image remained loaded; asking DXE to unload it.\n");
+    gBS->UnloadImage (ImageHandle);
+  }
   return Status;
 }
 
@@ -306,7 +388,7 @@ FindFileSystemForPath (IN CHAR16 *SearchPath, OUT EFI_HANDLE *Result)
 }
 
 STATIC
-VOID
+EFI_STATUS
 RunLoadProbe (IN EFI_HANDLE ImageHandle, IN EFI_HANDLE FsHandle)
 {
   EFI_DEVICE_PATH_PROTOCOL *Path;
@@ -362,7 +444,9 @@ RunLoadProbe (IN EFI_HANDLE ImageHandle, IN EFI_HANDLE FsHandle)
     PeStatus = LoadPeCoffImage(ImageHandle, FsHandle, WINDOWS_BOOT_MANAGER_PATH, Buffer, BufferSize);
     Print(L"[PROBE B] PE/COFF loader returned: %r (0x%lx)\n", PeStatus, (UINT64)PeStatus);
     gBS->FreePool(Buffer);
+    return PeStatus;
   }
+  return EFI_NOT_READY;
 }
 
 EFI_STATUS
@@ -375,6 +459,7 @@ UefiMain (
   EFI_STATUS                       Status;
   EFI_STATUS                       StartStatus;
   EFI_STATUS                       ImageProtocolStatus;
+  EFI_STATUS                       ProbeStatus;
   UINTN                            HandleCount;
   EFI_HANDLE                       *Handles;
   EFI_HANDLE                       FoundHandle;
@@ -400,7 +485,7 @@ UefiMain (
   ExitData = NULL;
 
   Print(L"\n========================================\n");
-  Print(L"          T500 BootLab v0.6              \n");
+  Print(L"          T500 BootLab v0.7              \n");
   Print(L"========================================\n");
   Print(L"Verbose Windows ARM64 chainload test\n");
   Print(L"Firmware vendor  : %s\n", gST->FirmwareVendor);
@@ -491,7 +576,12 @@ UefiMain (
   }
 
   LoadNtfsDriver(ImageHandle, FoundHandle);
-  RunLoadProbe(ImageHandle, FoundHandle);
+  ProbeStatus = RunLoadProbe(ImageHandle, FoundHandle);
+  if (ProbeStatus != EFI_NOT_READY) {
+    Print (L"[PROBE B] Handoff attempt returned; stopping before fallback LoadImage.\n");
+    Status = ProbeStatus;
+    goto Done;
+  }
 
   Print(L"\n[PATH 01] Calling FileDevicePath for selected handle...\n");
   BootManagerPath = FileDevicePath(
@@ -581,8 +671,8 @@ Done:
   }
 
   Print(L"\n[DONE] BootLab finished. No EFI files, BCD, partitions, or NVRAM were intentionally modified.\n");
-  Print(L"[DONE] Final application status: EFI_SUCCESS\n");
-  return EFI_SUCCESS;
+  Print(L"[DONE] Final application status: %r (0x%lx)\n", Status, (UINT64)Status);
+  return Status;
 }
 
 
