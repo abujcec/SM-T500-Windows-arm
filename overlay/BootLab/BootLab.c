@@ -1,5 +1,5 @@
 /** @file
-  T500 BootLab v0.4: verbose Windows Boot Manager chainload diagnostics.
+  T500 BootLab v0.6: verbose Windows Boot Manager chainload diagnostics.
 
   Scans UEFI Simple File System handles and attempts to load and start the
   existing Windows Boot Manager. This application does not intentionally
@@ -82,6 +82,9 @@ LoadPeCoffImage (
   EFI_LOADED_IMAGE_PROTOCOL     LoadedImage;
   EFI_HANDLE                    ImageHandle;
   EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
+  EFI_DEVICE_PATH_PROTOCOL      *HandlePath;
+  UINTN                          DevicePathPrefixSize;
+  UINTN                          FullDevicePathSize;
   EFI_IMAGE_ENTRY_POINT         EntryPoint;
 
   ZeroMem (&Context, sizeof (Context));
@@ -139,12 +142,26 @@ LoadPeCoffImage (
   LoadedImage.ParentHandle = ParentImage;
   LoadedImage.SystemTable = gST;
   LoadedImage.DeviceHandle = DeviceHandle;
+  HandlePath = DevicePathFromHandle (DeviceHandle);
   DevicePath = FileDevicePath (DeviceHandle, ImagePath);
-  if (DevicePath == NULL) {
+  if ((DevicePath == NULL) || (HandlePath == NULL)) {
+    if (DevicePath != NULL) {
+      gBS->FreePool (DevicePath);
+    }
     gBS->FreePages (Allocation, Pages);
     return EFI_OUT_OF_RESOURCES;
   }
-  LoadedImage.FilePath = DevicePath;
+  DevicePathPrefixSize = GetDevicePathSize (HandlePath) - sizeof (EFI_DEVICE_PATH_PROTOCOL);
+  FullDevicePathSize = GetDevicePathSize (DevicePath);
+  if ((DevicePathPrefixSize >= FullDevicePathSize) ||
+      (DevicePathPrefixSize + sizeof (EFI_DEVICE_PATH_PROTOCOL) >= FullDevicePathSize)) {
+    Print (L"[PECOFF] Invalid device path split: prefix=0x%lx full=0x%lx\n",
+           (UINT64)DevicePathPrefixSize, (UINT64)FullDevicePathSize);
+    gBS->FreePool (DevicePath);
+    gBS->FreePages (Allocation, Pages);
+    return EFI_LOAD_ERROR;
+  }
+  LoadedImage.FilePath = (EFI_DEVICE_PATH_PROTOCOL *)((UINT8 *)DevicePath + DevicePathPrefixSize);
   LoadedImage.ImageBase = (VOID *)(UINTN)ImageBase;
   LoadedImage.ImageSize = (UINTN)Context.ImageSize;
   LoadedImage.ImageCodeType = EfiLoaderCode;
@@ -170,7 +187,9 @@ LoadPeCoffImage (
 
   InvalidateInstructionCacheRange ((VOID *)(UINTN)Context.ImageAddress, (UINTN)Context.ImageSize);
   EntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)Context.EntryPoint;
-  Print (L"[PECOFF] Entry=%p base=%p size=0x%lx; transferring control...\n",
+  Print (L"[PECOFF] Device=%p full-path=%p file-path=%p\n",
+         DeviceHandle, DevicePath, LoadedImage.FilePath);
+  Print (L"[PECOFF] Entry=%p base=%p size=0x%lx; calling Windows Boot Manager entry...\n",
          EntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
   Status = EntryPoint (ImageHandle, gST);
   Print (L"[PECOFF] Windows image returned: %r\n", Status);
@@ -328,19 +347,19 @@ RunLoadProbe (IN EFI_HANDLE ImageHandle, IN EFI_HANDLE FsHandle)
   WindowsHandle = NULL;
   FindFileSystemForPath(WINDOWS_IMAGE_BOOT_MANAGER_PATH, &WindowsHandle);
   if (WindowsHandle != NULL) {
-    Print(L"[PROBE B] Windows partition found; testing matching copy...\n");
-    FsHandle = WindowsHandle;
+    Print(L"[PROBE B] NTFS Windows partition found (handle=%p).\n", WindowsHandle);
   } else {
-    Print(L"[PROBE B] Windows partition was not found.\n");
+    Print(L"[PROBE B] NTFS Windows partition was not found; testing ESP copy.\n");
   }
   Buffer = NULL; BufferSize = 0; ProbeImage = NULL;
-  Print(L"[PROBE B] Reading matching Windows copy into memory...\n");
-  Print(L"[PROBE B] Path: %s\n", WINDOWS_IMAGE_BOOT_MANAGER_PATH);
-  Status = ReadFileBuffer(FsHandle, WINDOWS_IMAGE_BOOT_MANAGER_PATH, &Buffer, &BufferSize);
+  Print(L"[PROBE B] Reading ESP Boot Manager into memory...\n");
+  Print(L"[PROBE B] Device: selected ESP handle %p\n", FsHandle);
+  Print(L"[PROBE B] Path: %s\n", WINDOWS_BOOT_MANAGER_PATH);
+  Status = ReadFileBuffer(FsHandle, WINDOWS_BOOT_MANAGER_PATH, &Buffer, &BufferSize);
   Print(L"[PROBE B] Read returned: %r (0x%lx), size=0x%lx\n", Status, (UINT64)Status, (UINT64)BufferSize);
   if (!EFI_ERROR(Status)) {
     Print(L"[PROBE B] Calling EDK2 PE/COFF loader...\n");
-    PeStatus = LoadPeCoffImage(ImageHandle, FsHandle, WINDOWS_IMAGE_BOOT_MANAGER_PATH, Buffer, BufferSize);
+    PeStatus = LoadPeCoffImage(ImageHandle, FsHandle, WINDOWS_BOOT_MANAGER_PATH, Buffer, BufferSize);
     Print(L"[PROBE B] PE/COFF loader returned: %r (0x%lx)\n", PeStatus, (UINT64)PeStatus);
     gBS->FreePool(Buffer);
   }
@@ -381,7 +400,7 @@ UefiMain (
   ExitData = NULL;
 
   Print(L"\n========================================\n");
-  Print(L"          T500 BootLab v0.5              \n");
+  Print(L"          T500 BootLab v0.6              \n");
   Print(L"========================================\n");
   Print(L"Verbose Windows ARM64 chainload test\n");
   Print(L"Firmware vendor  : %s\n", gST->FirmwareVendor);
@@ -565,4 +584,5 @@ Done:
   Print(L"[DONE] Final application status: EFI_SUCCESS\n");
   return EFI_SUCCESS;
 }
+
 
