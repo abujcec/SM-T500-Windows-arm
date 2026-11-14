@@ -1,5 +1,5 @@
 /** @file
-  T500 BootLab v0.7: EDK2-context Windows Boot Manager handoff diagnostics.
+  T500 BootLab v0.8: traced EDK2-context Windows Boot Manager handoff.
 
   Scans UEFI Simple File System handles and attempts to load and start the
   existing Windows Boot Manager. This application does not intentionally
@@ -60,6 +60,26 @@ typedef struct {
 } BOOTLAB_DXE_LOADED_IMAGE_PRIVATE_DATA;
 
 #define BOOTLAB_LOADED_IMAGE_PRIVATE_DATA_SIGNATURE SIGNATURE_32 ('l', 'd', 'r', 'i')
+
+STATIC EFI_IMAGE_ENTRY_POINT  mBootManagerEntryPoint;
+
+STATIC
+EFI_STATUS
+EFIAPI
+BootLabStartWindowsImage (
+  IN EFI_HANDLE        ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
+  )
+{
+  EFI_STATUS  Status;
+
+  Print (L"[ENTRY TRACE] DXE StartImage reached BootLab trampoline; entering Windows entry=%p\n",
+         mBootManagerEntryPoint);
+  Status = mBootManagerEntryPoint (ImageHandle, SystemTable);
+  Print (L"[ENTRY TRACE] Windows Boot Manager returned: %r (0x%lx)\n",
+         Status, (UINT64)Status);
+  return Status;
+}
 
 STATIC
 RETURN_STATUS
@@ -201,7 +221,8 @@ LoadPeCoffImage (
 
   Image->Signature = BOOTLAB_LOADED_IMAGE_PRIVATE_DATA_SIGNATURE;
   Image->Type = Context.ImageType;
-  Image->EntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)Context.EntryPoint;
+  mBootManagerEntryPoint = (EFI_IMAGE_ENTRY_POINT)(UINTN)Context.EntryPoint;
+  Image->EntryPoint = BootLabStartWindowsImage;
   Image->Info.Revision = EFI_LOADED_IMAGE_PROTOCOL_REVISION;
   Image->Info.ParentHandle = ParentImage;
   Image->Info.SystemTable = gST;
@@ -261,7 +282,7 @@ LoadPeCoffImage (
   Print (L"[PECOFF] Device=%p full-path=%p file-path=%p image=%p\n",
          DeviceHandle, Image->LoadedImageDevicePath, Image->Info.FilePath, ImageHandle);
   Print (L"[PECOFF] Entry=%p base=%p size=0x%lx; calling DXE StartImage...\n",
-         Image->EntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
+         mBootManagerEntryPoint, (VOID *)(UINTN)Context.ImageAddress, Context.ImageSize);
   ExitDataSize = 0;
   ExitData = NULL;
   Status = gBS->StartImage (ImageHandle, &ExitDataSize, &ExitData);
@@ -485,7 +506,7 @@ UefiMain (
   ExitData = NULL;
 
   Print(L"\n========================================\n");
-  Print(L"          T500 BootLab v0.7              \n");
+  Print(L"          T500 BootLab v0.8              \n");
   Print(L"========================================\n");
   Print(L"Verbose Windows ARM64 chainload test\n");
   Print(L"Firmware vendor  : %s\n", gST->FirmwareVendor);
